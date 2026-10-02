@@ -79,7 +79,8 @@ def parsear_mares(html: str, ano: int, mes: int) -> list[dict]:
     onclick="Day('AAAA-M-D')"; dentro dela, 4 td.tabla_mareas_marea, cada um
     com hora, tipo (classe ..._bajamar = baixa, ..._pleamar = alta) e altura.
     A fase da lua vem como classe do ícone, icon-hsN, onde N (0 a 29) é a
-    idade da lua em dias: 0 = nova, ~15 = cheia.
+    idade da lua em dias: 0 = nova, ~15 = cheia. Nascer e pôr do sol são do
+    dia, então se repetem nas ~4 linhas de maré daquele dia.
     """
     soup = BeautifulSoup(html, "lxml")
     tabela = soup.find("table", id="tabla_mareas")
@@ -99,6 +100,9 @@ def parsear_mares(html: str, ano: int, mes: int) -> list[dict]:
         # o número vem junto do texto "médio" do div filho; o primeiro token é o número
         coef = linha.select_one(".tabla_mareas_coeficiente_numero")
         coeficiente = int(coef.get_text(" ", strip=True).split()[0])
+        # nascer e pôr do sol: separam as horas surfáveis das noturnas
+        nascer_sol = linha.select_one(".tabla_mareas_salida_puesta_sol_salida").get_text(strip=True)
+        por_sol = linha.select_one(".tabla_mareas_salida_puesta_sol_puesta").get_text(strip=True)
 
         for celula in linha.select("td.tabla_mareas_marea"):
             hora = celula.select_one(".tabla_mareas_marea_hora")
@@ -114,6 +118,8 @@ def parsear_mares(html: str, ano: int, mes: int) -> list[dict]:
                     "altura_m": float(altura.get_text(strip=True).replace(",", ".")),
                     "coeficiente": coeficiente,
                     "idade_lua": idade_lua,
+                    "nascer_sol": nascer_sol,
+                    "por_sol": por_sol,
                 }
             )
     return eventos
