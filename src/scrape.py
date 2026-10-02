@@ -46,7 +46,6 @@ PAUSA = 1.5
 
 DIR_RAW = Path(__file__).resolve().parent.parent / "data" / "raw"
 
-# Abreviações de mês que aparecem nos blocos de dia das previsões ("02 OUT").
 MESES = {
     "JAN": 1, "FEV": 2, "MAR": 3, "ABR": 4, "MAI": 5, "JUN": 6,
     "JUL": 7, "AGO": 8, "SET": 9, "OUT": 10, "NOV": 11, "DEZ": 12,
@@ -58,7 +57,6 @@ def baixar_html(url: str, dados_post: dict | None = None) -> str:
 
     Use POST (passando `dados_post`) quando a página só devolver o conteúdo
     que você quer em resposta a um formulário; GET no resto.
-
     """
     if dados_post is None:
         resp = requests.get(url, headers=HEADERS, timeout=30)
@@ -74,22 +72,14 @@ def parsear_mares(html: str, ano: int, mes: int) -> list[dict]:
     Cada dia tem cerca de 4 eventos (duas altas, duas baixas). Além de
     horário e altura, a página traz informação de coeficiente de maré e de
     fase da lua — decida o que vale a pena capturar.
-
-    Estrutura (nomes em espanhol): table#tabla_mareas tem uma <tr> por dia com
-    onclick="Day('AAAA-M-D')"; dentro dela, 4 td.tabla_mareas_marea, cada um
-    com hora, tipo (classe ..._bajamar = baixa, ..._pleamar = alta) e altura.
-    A fase da lua vem como classe do ícone, icon-hsN, onde N (0 a 29) é a
-    idade da lua em dias: 0 = nova, ~15 = cheia. Nascer e pôr do sol são do
-    dia, então se repetem nas ~4 linhas de maré daquele dia.
     """
     soup = BeautifulSoup(html, "lxml")
     tabela = soup.find("table", id="tabla_mareas")
     eventos = []
     for linha in tabela.select("tr[onclick^='Day(']"):
-        # "Day('2026-10-1');" -> date(2026, 10, 1)
         data = datetime.strptime(linha["onclick"].split("'")[1], "%Y-%m-%d").date()
         if (data.year, data.month) != (ano, mes):
-            continue  # garante que o POST devolveu o mês pedido
+            continue
 
         icone_lua = linha.select_one("td.tabla_mareas_luna [class*='icon-hs']")
         idade_lua = next(
@@ -97,10 +87,8 @@ def parsear_mares(html: str, ano: int, mes: int) -> list[dict]:
             for c in icone_lua["class"]
             if c.startswith("icon-hs")
         )
-        # o número vem junto do texto "médio" do div filho; o primeiro token é o número
         coef = linha.select_one(".tabla_mareas_coeficiente_numero")
         coeficiente = int(coef.get_text(" ", strip=True).split()[0])
-        # nascer e pôr do sol: separam as horas surfáveis das noturnas
         nascer_sol = linha.select_one(".tabla_mareas_salida_puesta_sol_salida").get_text(strip=True)
         por_sol = linha.select_one(".tabla_mareas_salida_puesta_sol_puesta").get_text(strip=True)
 
@@ -108,7 +96,7 @@ def parsear_mares(html: str, ano: int, mes: int) -> list[dict]:
             hora = celula.select_one(".tabla_mareas_marea_hora")
             altura = celula.select_one(".tabla_mareas_marea_altura_numero")
             if hora is None or altura is None:
-                continue  # dias com só 3 marés deixam a 4ª célula vazia
+                continue
             tipo = "alta" if celula.select_one(".tabla_mareas_marea_pleamar") else "baixa"
             eventos.append(
                 {
@@ -131,13 +119,7 @@ def parsear_previsao(html: str, ano: int) -> list[dict]:
     As duas páginas têm o mesmo layout: um bloco por dia, com uma linha por
     hora dentro. Uma função só deve dar conta das duas.
 
-    Estrutura: um div.ficha por dia, com .dia ("02") e .mes ("OUT"). Cada
-    hora é um div.f_temp_horas com dois .f_temp_hora (hora e direção) e a
-    barra .grafico_temp_barra_relleno, cujo texto traz o valor com unidade
-    ("1,2 m" na de ondas, "15 km/h" na de vento) — por isso a regex.
-
-    Atenção à data: o bloco mostra dia e mês abreviado, sem o ano. Começamos
-    em `ano` e, se a data andar para trás (DEZ -> JAN), avançamos um ano.
+    Atenção à data: o bloco mostra dia e mês abreviado, sem o ano.
     """
     soup = BeautifulSoup(html, "lxml")
     leituras = []
@@ -177,7 +159,6 @@ def coletar_mares_do_ano(ano: int) -> pd.DataFrame:
 
 
 def coletar_mares_do_mes(ano: int, mes: int) -> list[dict]:
-    """Pede um mês da tábua (POST com o campo `fecha` do formulário da página)."""
     html = baixar_html(URL_BASE, {"fecha": f"{ano}-{mes:02d}-01"})
     eventos = parsear_mares(html, ano, mes)
     print(f"  marés {ano}-{mes:02d}: {len(eventos)} eventos")
@@ -210,8 +191,6 @@ def main(ano: int = 2025) -> None:
     print(f"Tábua de marés de {ano}...")
     arquivos[f"mares_{ano}.csv"] = coletar_mares_do_ano(ano)
 
-    # A previsão cobre ~7 dias e pode atravessar a virada do mês, então
-    # baixamos o mês corrente e o seguinte para não faltar maré na junção.
     print("Marés do período da previsão...")
     proximo = date(hoje.year + hoje.month // 12, hoje.month % 12 + 1, 1)
     arquivos["mares_previsao.csv"] = pd.DataFrame(
@@ -226,7 +205,7 @@ def main(ano: int = 2025) -> None:
     print()
     for nome, df in arquivos.items():
         if df.empty:
-            raise RuntimeError(f"{nome} saiu vazio — o layout do site mudou?")
+            raise RuntimeError(f"{nome} saiu vazio")
         df.to_csv(DIR_RAW / nome, index=False)
         print(f"{nome:<20} {len(df):>5} linhas")
 
